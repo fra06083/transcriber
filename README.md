@@ -1,43 +1,34 @@
-# TranscriberApp 🎙️
+# TranscriberApp
 
 <p align="center">
-  <img src="TranscriberApp_logo.png" width="160" alt="TranscriberApp Logo" />
+  <img src="TranscriberApp_logo.png" width="130" alt="TranscriberApp Logo" />
 </p>
 
-App Android per la trascrizione rapida e anonima delle note vocali (WhatsApp, Telegram e file audio), con supporto sia al motore integrato di sistema **Google Speech On-Device** sia alla rete neurale autonoma **Whisper Turbo** (100% offline).
+Applicazione Android per trascrivere in testo le note vocali ricevute su WhatsApp, Telegram o file audio locali tramite il menu "Condividi" di sistema.
 
----
+## Cosa c'è nell'app
 
-## 🌟 Caratteristiche Principali
+- **Trascrizione diretta da condivisione:** basta selezionare un vocale in chat e condividerlo con TranscriberApp per leggere il testo in un popup compatto senza uscire dalla conversazione.
+- **Scelta della lingua:** rilevamento automatico, Italiano o Inglese.
+- **Generazione testo in tempo reale:** visualizzazione progressiva delle parole con barra animata durante l'elaborazione.
+- **Player anonimo:** riproduzione audio integrata per ascoltare i vocali senza attivare conferme di ascolto.
 
-* **Doppio Motore di Riconoscimento Vocale:**
-  * **Google Speech On-Device:** Riconoscimento vocale ultra-rapido e leggero tramite i servizi di sistema di Google.
-  * **Whisper Turbo:** Modello neurale Whisper ottimizzato con accelerazione multithreading, zero consumo dati e 100% privacy.
-* **Animazioni Stile Google & Gemini:**
-  * Barra di avanzamento fluida `GoogleShimmerBar` con gradiente multicolore continuo.
-  * Onde animate e punti di ascolto Google Assistant.
-  * **Generazione progressiva delle parole:** Le parole appaiono in tempo reale parola per parola con cursore pulsante `▍`, eliminando scatti e pop-in improvvisi.
-* **Integrazione "Condividi" di Android:**
-  * Condividi qualsiasi vocale da WhatsApp o Telegram per aprirlo all'istante in un popup compatto senza lasciare la chat.
-* **Ascolto Anonimo:**
-  * Ascolta le note vocali con il lettore integrato senza inviare conferme di lettura.
+## Tecnologie utilizzate e crediti
 
----
+L'applicazione supporta due motori di trascrizione selezionabili:
 
-## 🚀 Download APK
+- **Google Speech Recognition (Android SpeechRecognizer)**
+  Sfrutta il motore di riconoscimento vocale di sistema Android con streaming audio tramite pipe (`ParcelFileDescriptor`).
+  *Crediti:* Google LLC.
 
-Scarica l'ultimo file APK pre-compilato direttamente dalla sezione [Releases](https://github.com/fra06083/transcriber/releases) di questo repository.
+- **whisper.cpp & OpenAI Whisper**
+  Porting nativo C/C++ del modello Whisper per inferenza locale offline su CPU ARM con istruzioni NEON.
+  *Crediti:* [Georgi Gerganov (whisper.cpp)](https://github.com/ggerganov/whisper.cpp) e [OpenAI (Whisper)](https://github.com/openai/whisper).
 
----
+- **FFmpeg**
+  Utilizzato per convertire ed estrarre l'audio dai formati usati dalle app di messaggistica (OPUS, OGG, M4A, AAC) in PCM 16kHz mono.
+  *Crediti:* Progetto FFmpeg e ffmpeg-kit.
 
-## 🛠️ Compilazione da Sorgenti
+## Download
 
-Per compilare il progetto in locale:
-
-```bash
-git clone git@github.com:fra06083/transcriber.git
-cd transcriber
-./gradlew assembleDebug
-```
-
-L'APK compilato si troverà in `app/build/outputs/apk/debug/app-debug.apk`.
+Gli APK compilati automaticamente sono disponibili nella scheda [Releases](https://github.com/fra06083/transcriber/releases).
