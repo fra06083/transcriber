@@ -51,7 +51,6 @@ jobs:
         run: |
           mkdir -p release-output
           cp app/build/outputs/apk/debug/app-debug.apk release-output/TranscriberApp.apk
-          cp app/build/outputs/apk/debug/app-debug.apk release-output/TranscriberApp-v1.0.apk
           ls -lh release-output/
 
       - name: Upload APK Artifact
@@ -65,12 +64,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0
-          name: "TranscriberApp v1.0"
+          name: "TranscriberApp"
           draft: false
           prerelease: false
           generate_release_notes: false
           files: |
             release-output/TranscriberApp.apk
-            release-output/TranscriberApp-v1.0.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
