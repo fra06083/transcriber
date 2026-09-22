@@ -1,0 +1,76 @@
+name: Build TranscriberApp APK
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "gradle"
+
+      - name: Set up Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK 26.1.10909125
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+
+      - name: Download Whisper Offline Model
+        run: |
+          mkdir -p app/src/main/assets/models
+          echo "Scaricamento modello neurale offline ggml-small-q5_1.bin..."
+          curl -L -o app/src/main/assets/models/ggml-small-q5_1.bin \
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
+          ls -lh app/src/main/assets/models/
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p release-output
+          cp app/build/outputs/apk/debug/app-debug.apk release-output/TranscriberApp.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-output/TranscriberApp-v1.0.apk
+          ls -lh release-output/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TranscriberApp-APK
+          path: release-output/TranscriberApp.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TranscriberApp ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-output/TranscriberApp.apk
+            release-output/TranscriberApp-v1.0.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
