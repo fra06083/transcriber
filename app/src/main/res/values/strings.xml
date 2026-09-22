@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Transcriber WhatsApp</string>
+    <string name="accessibility_service_name">Invio Automatico WhatsApp</string>
+    <string name="accessibility_service_description">Intercetta l\'apertura della chat di WhatsApp per i messaggi programmati e clicca automaticamente sul pulsante di invio.</string>
+</resources>
