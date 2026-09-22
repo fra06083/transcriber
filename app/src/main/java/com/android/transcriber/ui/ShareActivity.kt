@@ -37,6 +37,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.android.transcriber.ui.components.GoogleAssistantDots
+import com.android.transcriber.ui.components.GoogleBlue
+import com.android.transcriber.ui.components.GoogleShimmerBar
+import com.android.transcriber.ui.components.StreamingWordText
 import com.android.transcriber.ui.theme.TranscriberTheme
 import com.android.transcriber.ui.viewmodel.TranscriptionEngine
 import com.android.transcriber.ui.viewmodel.TranscriptionUiState
@@ -107,7 +111,8 @@ class ShareActivity : ComponentActivity() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
-                            .padding(bottom = 36.dp),
+                            .padding(bottom = 36.dp)
+                            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
@@ -133,6 +138,10 @@ class ShareActivity : ComponentActivity() {
 
                         AnimatedContent(
                             targetState = uiState,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(280)) + scaleIn(initialScale = 0.98f))
+                                    .togetherWith(fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.98f))
+                            },
                             label = "content_state"
                         ) { state ->
                             when (state) {
@@ -166,7 +175,7 @@ class ShareActivity : ComponentActivity() {
                                             )
 
                                             Text(
-                                                text = "Riconoscimento Vocale v2.2",
+                                                text = "Transcriber v1.0 • Riconoscimento Vocale",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -499,10 +508,12 @@ class ShareActivity : ComponentActivity() {
                                                     .padding(18.dp)
                                                     .verticalScroll(rememberScrollState())
                                             ) {
-                                                Text(
-                                                    text = state.text.ifBlank { "Nessun testo rilevato nella nota vocale." },
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    lineHeight = 24.sp
+                                                StreamingWordText(
+                                                    fullText = state.text.ifBlank { "Nessun testo rilevato nella nota vocale." },
+                                                    isStreaming = false,
+                                                    speedMs = 28L,
+                                                    textStyle = MaterialTheme.typography.bodyLarge,
+                                                    textColor = MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
                                         }
@@ -748,12 +759,9 @@ fun DynamicTranscribingStatus(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        WaveformBars(
-            isAnimating = true,
-            modifier = Modifier.padding(vertical = 4.dp)
+        GoogleAssistantDots(
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
-
-        Spacer(modifier = Modifier.height(14.dp))
 
         AnimatedContent(
             targetState = dynamicMessages[messageIndex],
@@ -775,12 +783,20 @@ fun DynamicTranscribingStatus(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Elaborazione intelligente 100% offline",
+            text = "Transcriber v1.0 • Riconoscimento intelligente",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Barra animata con sfumatura continua in stile Google
+        GoogleShimmerBar(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(bottom = 14.dp),
+            height = 5.dp
+        )
 
         Surface(
             shape = RoundedCornerShape(18.dp),
@@ -794,24 +810,35 @@ fun DynamicTranscribingStatus(
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                val currentDetail = if (partialText.isNotBlank() && partialText.contains("%")) {
-                    partialText
-                } else {
-                    subMessages[messageIndex]
-                }
-                AnimatedContent(
-                    targetState = currentDetail,
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(250))
-                    },
-                    label = "detail_msg"
-                ) { detailText ->
-                    Text(
-                        text = "$detailText ▍",
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = 22.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                if (partialText.isNotBlank() && !partialText.contains("%")) {
+                    // Generazione progressiva in tempo reale delle parole ricevute
+                    StreamingWordText(
+                        fullText = partialText,
+                        isStreaming = true,
+                        speedMs = 24L,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        textColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                } else {
+                    val currentDetail = if (partialText.isNotBlank() && partialText.contains("%")) {
+                        partialText
+                    } else {
+                        subMessages[messageIndex]
+                    }
+                    AnimatedContent(
+                        targetState = currentDetail,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(250))
+                        },
+                        label = "detail_msg"
+                    ) { detailText ->
+                        Text(
+                            text = "$detailText ▍",
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
