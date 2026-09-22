@@ -26,12 +26,12 @@ jobs:
           java-version: "17"
           cache: "gradle"
 
-      - name: Set up Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK 26.1.10909125
+      - name: Accept Android SDK Licenses & Setup NDK
         run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+          echo "Accettazione licenze Android..."
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          echo "Verifica e installazione NDK 26.1.10909125..."
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" || true
 
       - name: Download Whisper Offline Model
         run: |
@@ -45,7 +45,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Prepare APK Artifact
         run: |
