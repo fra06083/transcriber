@@ -1,0 +1,17 @@
+*.apk
+*.aab
+*.bin
+*.so
+.gradle/
+build/
+app/build/
+whisper/build/
+whisper/.cxx/
+app/.cxx/
+.cxx/
+local.properties
+.idea/
+*.iml
+.DS_Store
+/captures
+.externalNativeBuild/
