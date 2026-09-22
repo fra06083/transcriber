@@ -34,8 +34,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import com.android.transcriber.ui.DynamicTranscribingStatus
 import com.android.transcriber.ui.WaveformBars
+import com.android.transcriber.ui.components.StreamingWordText
 import com.android.transcriber.ui.viewmodel.TranscriptionEngine
 import com.android.transcriber.ui.viewmodel.TranscriptionUiState
 import com.android.transcriber.ui.viewmodel.TranscriptionViewModel
@@ -63,31 +67,42 @@ fun TranscriptionScreen(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Box(
             modifier = Modifier
-                .size(80.dp)
+                .size(72.dp)
                 .clip(CircleShape)
                 .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.surfaceVariant
+                    if (isProcessing) {
+                        Brush.sweepGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.tertiary,
+                                MaterialTheme.colorScheme.primary
+                            )
                         )
-                    )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
             val infiniteTransition = rememberInfiniteTransition(label = "pulse")
             val scale by infiniteTransition.animateFloat(
-                initialValue = 1f,
-                targetValue = 1.15f,
+                initialValue = 0.88f,
+                targetValue = 1.12f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(850, easing = FastOutSlowInEasing),
+                    animation = tween(900, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
                 label = "scale"
@@ -112,7 +127,7 @@ fun TranscriptionScreen(
         )
 
         Text(
-            text = "Riconoscimento Vocale v2.2 • Offline & Sistema",
+            text = "Transcriber v1.0 • Offline & Sistema",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -300,10 +315,12 @@ fun TranscriptionScreen(
                             )
 
                             SelectionContainer {
-                                Text(
-                                    text = state.text,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    lineHeight = 26.sp
+                                StreamingWordText(
+                                    fullText = state.text.ifBlank { "Nessun testo rilevato nel file audio." },
+                                    isStreaming = false,
+                                    speedMs = 28L,
+                                    textStyle = MaterialTheme.typography.bodyLarge,
+                                    textColor = MaterialTheme.colorScheme.onSurface
                                 )
                             }
 
