@@ -175,7 +175,7 @@ class ShareActivity : ComponentActivity() {
                                             )
 
                                             Text(
-                                                text = "Transcriber v1.0 • Riconoscimento Vocale",
+                                                text = "Transcriber v1.1 • Riconoscimento Vocale",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -783,7 +783,7 @@ fun DynamicTranscribingStatus(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Transcriber v1.0 • Riconoscimento intelligente",
+            text = "Transcriber v1.1 • Riconoscimento intelligente",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

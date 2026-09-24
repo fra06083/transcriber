@@ -127,7 +127,7 @@ fun TranscriptionScreen(
         )
 
         Text(
-            text = "Transcriber v1.0 • Offline & Sistema",
+            text = "Transcriber v1.1 • Offline & Sistema",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

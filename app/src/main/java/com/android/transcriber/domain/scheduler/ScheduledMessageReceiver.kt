@@ -9,6 +9,7 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.android.transcriber.TranscriberApp
 import com.android.transcriber.data.model.ScheduledMessageStatus
+import com.android.transcriber.domain.contact.ContactHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,11 +41,12 @@ class ScheduledMessageReceiver : BroadcastReceiver() {
 
         val messageId = intent.getLongExtra("EXTRA_MESSAGE_ID", -1L)
         val phoneNumber = intent.getStringExtra("EXTRA_PHONE_NUMBER") ?: ""
+        val contactName = intent.getStringExtra("EXTRA_CONTACT_NAME")
         val messageText = intent.getStringExtra("EXTRA_MESSAGE_TEXT") ?: ""
 
         if (phoneNumber.isBlank() || messageText.isBlank()) return
 
-        val cleanPhone = phoneNumber.replace("+", "").replace(" ", "").replace("-", "").trim()
+        val cleanPhone = ContactHelper.cleanForWhatsApp(phoneNumber)
 
         runCatching {
             val encodedText = URLEncoder.encode(messageText, "UTF-8")
@@ -65,7 +67,7 @@ class ScheduledMessageReceiver : BroadcastReceiver() {
                 context.startActivity(genericIntent)
             }
 
-            sendNotification(context, cleanPhone, messageText)
+            sendNotification(context, cleanPhone, contactName, messageText)
 
             if (messageId != -1L) {
                 val repository = (context.applicationContext as TranscriberApp).database.scheduledMessageDao()
@@ -83,7 +85,7 @@ class ScheduledMessageReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun sendNotification(context: Context, phone: String, text: String) {
+    private fun sendNotification(context: Context, phone: String, contactName: String?, text: String) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -95,10 +97,12 @@ class ScheduledMessageReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val recipientLabel = if (!contactName.isNullOrBlank()) "$contactName ($phone)" else phone
+
         val notification = NotificationCompat.Builder(context, "scheduled_messages_channel")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Messaggio WhatsApp Inviato")
-            .setContentText("Destinatario $phone: $text")
+            .setContentText("A $recipientLabel: $text")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)

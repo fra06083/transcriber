@@ -8,6 +8,7 @@ data class ScheduledMessage(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val phoneNumber: String,
+    val contactName: String? = null,
     val messageText: String,
     val scheduledTimeMillis: Long,
     val status: ScheduledMessageStatus = ScheduledMessageStatus.PENDING,

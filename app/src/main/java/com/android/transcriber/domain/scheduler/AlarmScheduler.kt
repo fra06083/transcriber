@@ -25,6 +25,7 @@ class AlarmScheduler(private val context: Context) {
         val intent = Intent(context, ScheduledMessageReceiver::class.java).apply {
             putExtra("EXTRA_MESSAGE_ID", message.id)
             putExtra("EXTRA_PHONE_NUMBER", message.phoneNumber)
+            putExtra("EXTRA_CONTACT_NAME", message.contactName)
             putExtra("EXTRA_MESSAGE_TEXT", message.messageText)
         }
 
