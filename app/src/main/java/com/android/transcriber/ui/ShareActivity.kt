@@ -822,35 +822,33 @@ fun DynamicTranscribingStatus(
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
-        // Status headline
-        Text(
-            text = dynamicMessages[messageIndex],
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = headlineColor,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.height(26.dp)
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Transcriber v1.2 • Riconoscimento intelligente",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // Rotating status message with crossfade — no pop-in
+        AnimatedContent(
+            targetState = messageIndex,
+            transitionSpec = {
+                fadeIn(tween(300)) togetherWith fadeOut(tween(200))
+            },
+            label = "status_msg"
+        ) { idx ->
+            Text(
+                text = dynamicMessages[idx],
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = headlineColor,
+                textAlign = TextAlign.Center
+            )
+        }
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Progress shimmer
         GoogleShimmerBar(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .padding(bottom = 14.dp),
-            height = 5.dp
+            height = 4.dp
         )
 
-        // Fixed-height container for streaming transcription
+        // Streaming text box
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -868,22 +866,25 @@ fun DynamicTranscribingStatus(
                     StreamingWordText(
                         fullText = persistentText,
                         isStreaming = true,
-                        speedMs = 18L,
+                        speedMs = 14L,
                         textStyle = MaterialTheme.typography.bodyMedium,
                         textColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    val currentDetail = if (partialText.isNotBlank() && partialText.contains("%")) {
-                        partialText
-                    } else {
-                        subMessages[messageIndex]
+                    AnimatedContent(
+                        targetState = messageIndex,
+                        transitionSpec = {
+                            fadeIn(tween(300)) togetherWith fadeOut(tween(200))
+                        },
+                        label = "sub_msg"
+                    ) { idx ->
+                        Text(
+                            text = subMessages[idx],
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 22.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
                     }
-                    Text(
-                        text = "$currentDetail ▍",
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = 22.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                    )
                 }
             }
         }

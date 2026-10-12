@@ -136,71 +136,72 @@ fun GoogleAssistantDots(
     }
 }
 
-// Progressive typewriter text animation
+// Typewriter that only ever moves forward — never resets when fullText grows
 @Composable
 fun StreamingWordText(
     fullText: String,
     isStreaming: Boolean,
     modifier: Modifier = Modifier,
-    speedMs: Long = 18L,
+    speedMs: Long = 14L,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     cursorColor: Color = GoogleBlue
 ) {
-    val cleanTarget = fullText.trim()
-    var displayedLength by remember { mutableIntStateOf(0) }
+    // Store the latest target in a ref so the loop can read it without restarting
+    val targetRef = remember { mutableStateOf("") }
+    targetRef.value = fullText.trim()
 
-    LaunchedEffect(cleanTarget) {
-        if (cleanTarget.isEmpty()) {
-            displayedLength = 0
-            return@LaunchedEffect
-        }
+    // displayedLength only ever increases
+    val displayedLength = remember { mutableIntStateOf(0) }
 
-        while (displayedLength < cleanTarget.length) {
-            val step = if (cleanTarget.length - displayedLength > 25) 4 else 2
-            displayedLength = minOf(displayedLength + step, cleanTarget.length)
-            delay(speedMs)
+    // Single loop that lives as long as the composable — never cancelled on text change
+    LaunchedEffect(Unit) {
+        while (true) {
+            val target = targetRef.value
+            val current = displayedLength.intValue
+            if (current < target.length) {
+                val remaining = target.length - current
+                val step = when {
+                    remaining > 40 -> 5
+                    remaining > 15 -> 3
+                    else -> 1
+                }
+                displayedLength.intValue = minOf(current + step, target.length)
+                delay(speedMs)
+            } else {
+                delay(16) // idle — wait for more text
+            }
         }
     }
 
-    val visibleText = remember(cleanTarget, displayedLength) {
-        if (cleanTarget.isEmpty() || displayedLength <= 0) ""
-        else cleanTarget.take(displayedLength)
-    }
+    val visibleText = targetRef.value.take(displayedLength.intValue)
 
-    // Blinking cursor
     val infiniteTransition = rememberInfiniteTransition(label = "cursor")
     val cursorAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 450, easing = LinearEasing),
+            animation = tween(500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "alpha"
+        label = "cursor_alpha"
     )
 
-    val showCursor = isStreaming || (displayedLength < cleanTarget.length)
+    val showCursor = isStreaming || displayedLength.intValue < targetRef.value.length
 
-    val annotatedText = remember(visibleText, showCursor, cursorAlpha) {
-        buildAnnotatedString {
+    Text(
+        text = buildAnnotatedString {
             append(visibleText)
             if (showCursor) {
-                if (visibleText.isNotEmpty()) {
-                    append(" ")
-                }
+                append(" ")
                 withStyle(SpanStyle(color = cursorColor.copy(alpha = cursorAlpha))) {
                     append("▍")
                 }
             }
-        }
-    }
-
-    Text(
-        text = annotatedText,
+        },
         style = textStyle,
         color = textColor,
-        lineHeight = (textStyle.fontSize.value * 1.45f).sp,
+        lineHeight = (textStyle.fontSize.value * 1.5f).sp,
         modifier = modifier
     )
 }
