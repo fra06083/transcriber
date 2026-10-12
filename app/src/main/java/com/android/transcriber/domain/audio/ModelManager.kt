@@ -19,10 +19,7 @@ class ModelManager(private val context: Context) {
     val modelsDir: File
         get() = File(context.filesDir, "models").apply { mkdirs() }
 
-    /**
-     * Retrieves the local model file from disk or extracts it directly from assets.
-     * Operates 100% offline with zero network connectivity.
-     */
+    // Get model file from disk or extract from assets
     suspend fun getOrExtractModel(onProgress: (String) -> Unit = {}): File = withContext(Dispatchers.IO) {
         val candidates = listOf(MODEL_QUANT_NAME, MODEL_SMALL_NAME)
 

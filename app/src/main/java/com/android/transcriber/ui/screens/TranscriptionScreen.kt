@@ -34,16 +34,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import com.android.transcriber.data.model.TranscriptionRecord
+import com.android.transcriber.domain.updater.AppReleaseInfo
 import com.android.transcriber.ui.DynamicTranscribingStatus
-import com.android.transcriber.ui.WaveformBars
-import com.android.transcriber.ui.components.StreamingWordText
 import com.android.transcriber.ui.viewmodel.TranscriptionEngine
 import com.android.transcriber.ui.viewmodel.TranscriptionUiState
 import com.android.transcriber.ui.viewmodel.TranscriptionViewModel
+import com.android.transcriber.ui.viewmodel.UpdateUiState
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -60,6 +57,10 @@ fun TranscriptionScreen(
     val selectedLanguage by viewModel.selectedLanguage.collectAsState()
     val selectedEngine by viewModel.selectedEngine.collectAsState()
     val recentTranscriptions by viewModel.recentTranscriptions.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
+    val isAutoUpdateEnabled by viewModel.isAutoUpdateEnabled.collectAsState()
+
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -69,6 +70,57 @@ fun TranscriptionScreen(
 
     val isProcessing = uiState is TranscriptionUiState.Converting || uiState is TranscriptionUiState.Transcribing
 
+    // Update dialogs
+    when (val state = updateState) {
+        is UpdateUiState.UpdateAvailable -> {
+            UpdateAvailableDialog(
+                info = state.info,
+                onDismiss = { viewModel.dismissUpdateDialog() },
+                onDownload = { viewModel.downloadUpdate(state.info.downloadUrl) }
+            )
+        }
+        is UpdateUiState.UpToDate -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissUpdateDialog() },
+                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                title = { Text("App aggiornata") },
+                text = { Text("Stai già utilizzando la versione più recente (${state.currentVersion}).") },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissUpdateDialog() }) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+        is UpdateUiState.Error -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissUpdateDialog() },
+                icon = { Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                title = { Text("Verifica non riuscita") },
+                text = { Text(state.message) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.dismissUpdateDialog() }) {
+                        Text("Chiudi")
+                    }
+                }
+            )
+        }
+        else -> Unit
+    }
+
+    // Settings dialog
+    if (showSettingsDialog) {
+        SettingsDialog(
+            isAutoUpdateEnabled = isAutoUpdateEnabled,
+            onAutoUpdateToggled = { viewModel.setAutoUpdateEnabled(it) },
+            onCheckNow = {
+                showSettingsDialog = false
+                viewModel.checkForUpdates(isManual = true)
+            },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -77,7 +129,21 @@ fun TranscriptionScreen(
             .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        // Top action bar with settings
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.End
+        ) {
+            IconButton(onClick = { showSettingsDialog = true }) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Impostazioni",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -199,15 +265,44 @@ fun TranscriptionScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        Button(
-            onClick = { audioPickerLauncher.launch("audio/*") },
-            enabled = !isProcessing,
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Scegli file audio", style = MaterialTheme.typography.titleSmall)
+            Button(
+                onClick = { audioPickerLauncher.launch("audio/*") },
+                enabled = !isProcessing,
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Scegli audio", style = MaterialTheme.typography.titleSmall)
+            }
+
+            OutlinedButton(
+                onClick = { viewModel.checkForUpdates(isManual = true) },
+                enabled = updateState !is UpdateUiState.Checking,
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                if (updateState is UpdateUiState.Checking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Verifica...", style = MaterialTheme.typography.labelMedium)
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Aggiornamenti", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -409,7 +504,7 @@ fun TranscriptionScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // Sezione Messaggi Trascritti Recenti
+        // History section
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -513,6 +608,150 @@ fun TranscriptionScreen(
 
         Spacer(modifier = Modifier.height(36.dp))
     }
+}
+
+// Dialog for new release
+@Composable
+private fun UpdateAvailableDialog(
+    info: AppReleaseInfo,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.SystemUpdate,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                "Aggiornamento disponibile",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "${info.title} (${info.tagName})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Versione attuale: v${info.currentVersion}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (info.changelog.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Novità della release:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = info.changelog,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDownload) {
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Scarica e aggiorna")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Più tardi")
+            }
+        }
+    )
+}
+
+// Settings dialog with auto-update switch
+@Composable
+private fun SettingsDialog(
+    isAutoUpdateEnabled: Boolean,
+    onAutoUpdateToggled: (Boolean) -> Unit,
+    onCheckNow: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text("Impostazioni", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Controllo automatico all'avvio",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Verifica la presenza di aggiornamenti all'apertura dell'app",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = isAutoUpdateEnabled,
+                        onCheckedChange = onAutoUpdateToggled
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                OutlinedButton(
+                    onClick = onCheckNow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Verifica aggiornamenti adesso")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Chiudi")
+            }
+        }
+    )
 }
 
 @Composable

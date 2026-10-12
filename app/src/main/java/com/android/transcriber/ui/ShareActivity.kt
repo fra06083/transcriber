@@ -672,23 +672,23 @@ class ShareActivity : ComponentActivity() {
     }
 
     private fun detectSourceApp(audioUri: Uri?): String {
-        // 1. Controlla URI authority
+        // 1. Authority
         val uriAuthority = audioUri?.authority?.lowercase(Locale.ROOT) ?: ""
         if (uriAuthority.contains("whatsapp")) return "WhatsApp"
         if (uriAuthority.contains("telegram")) return "Telegram"
 
-        // 2. Controlla URI path
+        // 2. Path
         val uriPath = audioUri?.path?.lowercase(Locale.ROOT) ?: ""
         if (uriPath.contains("whatsapp")) return "WhatsApp"
         if (uriPath.contains("telegram")) return "Telegram"
 
-        // 3. Controlla referrer
+        // 3. Referrer
         val ref = referrer
         val refStr = ref?.toString()?.lowercase(Locale.ROOT) ?: ""
         if (refStr.contains("whatsapp")) return "WhatsApp"
         if (refStr.contains("telegram")) return "Telegram"
 
-        // 4. Controlla callingPackage
+        // 4. Calling package
         val callingPkg = callingPackage
         if (!callingPkg.isNullOrBlank()) {
             if (callingPkg.contains("whatsapp", ignoreCase = true)) return "WhatsApp"
@@ -699,7 +699,7 @@ class ShareActivity : ComponentActivity() {
             } catch (_: Exception) {}
         }
 
-        // 5. Host del referrer tramite PackageManager
+        // 5. Referrer host
         ref?.host?.let { host ->
             try {
                 val appInfo = packageManager.getApplicationInfo(host, 0)
@@ -798,11 +798,18 @@ fun DynamicTranscribingStatus(
         }
     }
 
+    var persistentText by remember { mutableStateOf("") }
+    LaunchedEffect(partialText) {
+        if (partialText.isNotBlank() && !partialText.contains("%")) {
+            persistentText = partialText
+        }
+    }
+
     val scrollState = rememberScrollState()
 
-    // Scorrimento automatico verso il basso mentre il testo viene generato man mano
-    LaunchedEffect(partialText) {
-        if (partialText.isNotBlank()) {
+    // Auto-scroll downward when new text appears
+    LaunchedEffect(persistentText.length, scrollState.maxValue) {
+        if (persistentText.isNotBlank()) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
@@ -815,7 +822,7 @@ fun DynamicTranscribingStatus(
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
-        // Aggiorna la frase carina in loco con altezza fissa per non far saltare il widget
+        // Status headline
         Text(
             text = dynamicMessages[messageIndex],
             style = MaterialTheme.typography.titleMedium,
@@ -835,7 +842,7 @@ fun DynamicTranscribingStatus(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Barra animata con sfumatura continua in stile Google
+        // Progress shimmer
         GoogleShimmerBar(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
@@ -843,13 +850,13 @@ fun DynamicTranscribingStatus(
             height = 5.dp
         )
 
-        // Box fisso: il widget rimane perfettamente stabile
+        // Fixed-height container for streaming transcription
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(190.dp) // Altezza stabile e fissa
+                .height(190.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -857,9 +864,9 @@ fun DynamicTranscribingStatus(
                     .padding(16.dp)
                     .verticalScroll(scrollState)
             ) {
-                if (partialText.isNotBlank() && !partialText.contains("%")) {
+                if (persistentText.isNotBlank()) {
                     StreamingWordText(
-                        fullText = partialText,
+                        fullText = persistentText,
                         isStreaming = true,
                         speedMs = 18L,
                         textStyle = MaterialTheme.typography.bodyMedium,

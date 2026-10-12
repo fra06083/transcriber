@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-// Colori ufficiali Google & Gemini
+// Brand colors
 val GoogleBlue = Color(0xFF4285F4)
 val GoogleRed = Color(0xFFEA4335)
 val GoogleYellow = Color(0xFFFBBC05)
@@ -30,17 +30,14 @@ val GoogleGreen = Color(0xFF34A853)
 val GeminiPurple = Color(0xFF9C27B0)
 val GeminiCyan = Color(0xFF00E5FF)
 
-/**
- * Barra di avanzamento orizzontale animata con sfumatura continua in stile Google / Gemini.
- * Crea un flusso cromatico liquido e continuo che elimina qualsiasi effetto statico o a scatti.
- */
+// Animated multicolor shimmer progress bar
 @Composable
 fun GoogleShimmerBar(
     modifier: Modifier = Modifier,
     height: Dp = 4.dp,
     isAnimating: Boolean = true
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "google_shimmer")
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
     val offset by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1200f,
@@ -48,10 +45,10 @@ fun GoogleShimmerBar(
             animation = tween(durationMillis = 1600, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "shimmer_offset"
+        label = "offset"
     )
 
-    val googleGradient = Brush.linearGradient(
+    val gradient = Brush.linearGradient(
         colors = listOf(
             GoogleBlue,
             GeminiPurple,
@@ -70,13 +67,11 @@ fun GoogleShimmerBar(
             .fillMaxWidth()
             .height(height)
             .clip(CircleShape)
-            .background(if (isAnimating) googleGradient else Brush.linearGradient(listOf(GoogleBlue, GeminiCyan)))
+            .background(if (isAnimating) gradient else Brush.linearGradient(listOf(GoogleBlue, GeminiCyan)))
     )
 }
 
-/**
- * I 4 punti pulsanti animati di Google Assistant con rimbalzo a onda sfalsato.
- */
+// Pulsing 4-dot assistant wave
 @Composable
 fun GoogleAssistantDots(
     modifier: Modifier = Modifier,
@@ -90,7 +85,7 @@ fun GoogleAssistantDots(
         GoogleGreen
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "dots_wave")
+    val infiniteTransition = rememberInfiniteTransition(label = "dots")
 
     Row(
         modifier = modifier,
@@ -111,7 +106,7 @@ fun GoogleAssistantDots(
                     },
                     repeatMode = RepeatMode.Restart
                 ),
-                label = "dot_anim_$index"
+                label = "dot_y_$index"
             )
 
             val scale by infiniteTransition.animateFloat(
@@ -141,70 +136,57 @@ fun GoogleAssistantDots(
     }
 }
 
-/**
- * Genera e visualizza le parole progressivamente (effetto Typewriter / Streaming)
- * come in Gemini e Google Assistant, mantenendo il layout stabile senza sfarfallio
- * o effetti di pop-in/pop-out delle parole.
- *
- * @param fullText Il testo completo o parziale da mostrare progressivamente.
- * @param isStreaming Indica se la trascrizione è ancora in corso.
- * @param speedMs Ritardo tra la comparsa di una parola e la successiva (default: 20ms).
- */
+// Progressive typewriter text animation
 @Composable
 fun StreamingWordText(
     fullText: String,
     isStreaming: Boolean,
     modifier: Modifier = Modifier,
-    speedMs: Long = 20L,
+    speedMs: Long = 18L,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     cursorColor: Color = GoogleBlue
 ) {
-    val words = remember(fullText) {
-        if (fullText.isBlank()) emptyList() else fullText.split("\\s+".toRegex()).filter { it.isNotBlank() }
-    }
+    val cleanTarget = fullText.trim()
+    var displayedLength by remember { mutableIntStateOf(0) }
 
-    var displayedCount by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(words.size) {
-        val totalWords = words.size
-        if (totalWords == 0) {
-            displayedCount = 0
+    LaunchedEffect(cleanTarget) {
+        if (cleanTarget.isEmpty()) {
+            displayedLength = 0
             return@LaunchedEffect
         }
-        if (displayedCount > totalWords) {
-            displayedCount = totalWords
-        }
-        while (displayedCount < totalWords) {
-            displayedCount++
+
+        while (displayedLength < cleanTarget.length) {
+            val step = if (cleanTarget.length - displayedLength > 25) 4 else 2
+            displayedLength = minOf(displayedLength + step, cleanTarget.length)
             delay(speedMs)
         }
     }
 
-    // Cursore pulsante mentre sta ancora scrivendo o elaborando
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor_blink")
+    val visibleText = remember(cleanTarget, displayedLength) {
+        if (cleanTarget.isEmpty() || displayedLength <= 0) ""
+        else cleanTarget.take(displayedLength)
+    }
+
+    // Blinking cursor
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
     val cursorAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 500, easing = LinearEasing),
+            animation = tween(durationMillis = 450, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "cursor_alpha"
+        label = "alpha"
     )
 
-    val currentText = remember(displayedCount, words) {
-        if (displayedCount <= 0 || words.isEmpty()) ""
-        else words.take(displayedCount).joinToString(" ")
-    }
+    val showCursor = isStreaming || (displayedLength < cleanTarget.length)
 
-    val showCursor = isStreaming || (displayedCount < words.size)
-
-    val annotatedText = remember(currentText, showCursor, cursorAlpha) {
+    val annotatedText = remember(visibleText, showCursor, cursorAlpha) {
         buildAnnotatedString {
-            append(currentText)
+            append(visibleText)
             if (showCursor) {
-                if (currentText.isNotEmpty()) {
+                if (visibleText.isNotEmpty()) {
                     append(" ")
                 }
                 withStyle(SpanStyle(color = cursorColor.copy(alpha = cursorAlpha))) {

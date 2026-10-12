@@ -57,7 +57,7 @@ fun SchedulerScreen(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showAccessibilityHelpDialog by remember { mutableStateOf(false) }
-    var selectedFilterTab by remember { mutableIntStateOf(0) } // 0: In programma, 1: Cronologia, 2: Tutti
+    var selectedFilterTab by remember { mutableIntStateOf(0) } // 0: Scheduled, 1: History, 2: All
 
     var isAccessibilityActive by remember {
         mutableStateOf(ContactHelper.isAccessibilityServiceEnabled(context))
@@ -1118,7 +1118,7 @@ fun AddScheduledMessageSheet(
                 }
             }
 
-            // Smart Time buttons: Stasera, Domani mattina, o Personalizzato
+            // Time preset buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)

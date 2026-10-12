@@ -28,14 +28,7 @@ class WhisperTranscriber(private val context: Context) {
     }
 
 
-    /**
-     * Transcribes a 16kHz mono WAV file using whisper.cpp.
-     * Keeps the exact interface previously provided by VoskTranscriber.
-     *
-     * @param wavFile The WAV file to transcribe (16kHz mono PCM 16-bit).
-     * @param languageCode "it" (default for Italian), "auto" for auto detection, "en" for English.
-     * @param onProgress Callback invoked with partial text / progress status updates.
-     */
+    // Transcribe 16kHz mono WAV using whisper.cpp
     suspend fun transcribeWav(
         wavFile: File,
         languageCode: String = "it",
@@ -88,8 +81,5 @@ class WhisperTranscriber(private val context: Context) {
     }
 }
 
-/**
- * Backward compatibility typealias ensuring any external references to VoskTranscriber
- * continue to compile and work transparently with the Whisper engine.
- */
+// Alias for backward compatibility
 typealias VoskTranscriber = WhisperTranscriber

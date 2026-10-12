@@ -10,6 +10,8 @@ import com.android.transcriber.data.model.TranscriptionRecord
 import com.android.transcriber.domain.audio.AudioConverter
 import com.android.transcriber.domain.audio.GoogleSpeechTranscriber
 import com.android.transcriber.domain.audio.WhisperTranscriber
+import com.android.transcriber.domain.updater.AppReleaseInfo
+import com.android.transcriber.domain.updater.AppUpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,12 +37,21 @@ sealed interface TranscriptionUiState {
     data class Error(val message: String) : TranscriptionUiState
 }
 
+sealed interface UpdateUiState {
+    object Idle : UpdateUiState
+    object Checking : UpdateUiState
+    data class UpdateAvailable(val info: AppReleaseInfo) : UpdateUiState
+    data class UpToDate(val currentVersion: String) : UpdateUiState
+    data class Error(val message: String) : UpdateUiState
+}
+
 class TranscriptionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = (application as TranscriberApp).database
     private val audioConverter = AudioConverter(application)
     private val whisperTranscriber = WhisperTranscriber(application)
     private val googleSpeechTranscriber = GoogleSpeechTranscriber(application)
+    private val appUpdateManager = AppUpdateManager(application)
 
     private val _uiState = MutableStateFlow<TranscriptionUiState>(TranscriptionUiState.Idle)
     val uiState: StateFlow<TranscriptionUiState> = _uiState.asStateFlow()
@@ -51,9 +62,22 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     private val _selectedEngine = MutableStateFlow(TranscriptionEngine.GOOGLE)
     val selectedEngine: StateFlow<TranscriptionEngine> = _selectedEngine.asStateFlow()
 
+    private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+
+    private val _isAutoUpdateEnabled = MutableStateFlow(appUpdateManager.isAutoCheckEnabled())
+    val isAutoUpdateEnabled: StateFlow<Boolean> = _isAutoUpdateEnabled.asStateFlow()
+
     val recentTranscriptions: StateFlow<List<TranscriptionRecord>> =
         database.transcriptionRecordDao().getAllRecords()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        // Run background update check on start only if user opted in
+        if (appUpdateManager.isAutoCheckEnabled()) {
+            checkForUpdates(isManual = false)
+        }
+    }
 
     fun setSelectedLanguage(lang: String) {
         _selectedLanguage.value = lang
@@ -61,6 +85,51 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
 
     fun setSelectedEngine(engine: TranscriptionEngine) {
         _selectedEngine.value = engine
+    }
+
+    fun setAutoUpdateEnabled(enabled: Boolean) {
+        appUpdateManager.setAutoCheckEnabled(enabled)
+        _isAutoUpdateEnabled.value = enabled
+    }
+
+    fun checkForUpdates(isManual: Boolean = true) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (isManual) {
+                _updateState.value = UpdateUiState.Checking
+            }
+            val result = appUpdateManager.checkLatestRelease()
+            result.fold(
+                onSuccess = { info ->
+                    if (info.isUpdateAvailable) {
+                        _updateState.value = UpdateUiState.UpdateAvailable(info)
+                    } else {
+                        if (isManual) {
+                            _updateState.value = UpdateUiState.UpToDate(info.currentVersion)
+                        } else {
+                            _updateState.value = UpdateUiState.Idle
+                        }
+                    }
+                },
+                onFailure = { ex ->
+                    Log.w(TAG, "Update check failed: ${ex.message}")
+                    if (isManual) {
+                        _updateState.value = UpdateUiState.Error(
+                            ex.localizedMessage ?: "Impossibile verificare gli aggiornamenti"
+                        )
+                    } else {
+                        _updateState.value = UpdateUiState.Idle
+                    }
+                }
+            )
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _updateState.value = UpdateUiState.Idle
+    }
+
+    fun downloadUpdate(downloadUrl: String) {
+        appUpdateManager.openDownloadUrl(downloadUrl)
     }
 
     fun deleteRecord(record: TranscriptionRecord) {
@@ -78,9 +147,9 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     fun processAudioUri(audioUri: Uri, sourceApp: String = "Transcriber") {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                withTimeout(180_000L) { // 3 minute maximum overall timeout
+                withTimeout(180_000L) {
                     val currentEngine = _selectedEngine.value
-                    Log.i(TAG, "Avvio elaborazione audio: $audioUri (motore: ${currentEngine.name}, sorgente: $sourceApp, lingua: ${_selectedLanguage.value})")
+                    Log.i(TAG, "Processing audio: $audioUri (engine=${currentEngine.name}, app=$sourceApp, lang=${_selectedLanguage.value})")
                     _uiState.value = TranscriptionUiState.Converting
 
                     val conversionResult = audioConverter.convertToWav(audioUri)
@@ -88,7 +157,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     conversionResult.fold(
                         onSuccess = { wavFile ->
                             try {
-                                Log.i(TAG, "File WAV generato (${wavFile.length()} bytes). Avvio trascrizione con ${currentEngine.displayName}...")
+                                Log.i(TAG, "WAV generated (${wavFile.length()} bytes). Starting transcription...")
                                 _uiState.value = TranscriptionUiState.Transcribing("")
 
                                 val lang = _selectedLanguage.value
@@ -100,7 +169,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                                     }
                                     if (googleRes.isFailure) {
                                         val ex = googleRes.exceptionOrNull()
-                                        Log.w(TAG, "Google Speech non riuscito (${ex?.message}), fallback automatico su Whisper Turbo...")
+                                        Log.w(TAG, "Google speech failed (${ex?.message}), falling back to Whisper...")
                                         actuallyUsedWhisper = true
                                         _uiState.value = TranscriptionUiState.Transcribing("Passaggio automatico a Whisper Turbo...")
                                         whisperTranscriber.transcribeWav(wavFile, languageCode = lang) { progressText ->
@@ -117,10 +186,10 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
 
                                 transcriptionResult.fold(
                                     onSuccess = { resultText ->
-                                        Log.i(TAG, "Trascrizione completata con successo: $resultText")
+                                        Log.i(TAG, "Transcription completed: $resultText")
                                         _uiState.value = TranscriptionUiState.Success(resultText)
 
-                                        // Salva automaticamente la trascrizione nella cronologia
+                                        // Persist transcription in history
                                         val record = TranscriptionRecord(
                                             text = resultText,
                                             timestamp = System.currentTimeMillis(),
@@ -130,7 +199,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                                         database.transcriptionRecordDao().insertRecord(record)
                                     },
                                     onFailure = { exception ->
-                                        Log.e(TAG, "Errore nella trascrizione", exception)
+                                        Log.e(TAG, "Transcription error", exception)
                                         _uiState.value = TranscriptionUiState.Error(
                                             exception.localizedMessage ?: "Errore durante la trascrizione dell'audio"
                                         )
@@ -143,7 +212,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                             }
                         },
                         onFailure = { exception ->
-                            Log.e(TAG, "Errore nella conversione FFmpeg", exception)
+                            Log.e(TAG, "FFmpeg conversion error", exception)
                             _uiState.value = TranscriptionUiState.Error(
                                 exception.localizedMessage ?: "Errore durante la conversione FFmpeg dell'audio"
                             )
@@ -151,10 +220,10 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
                     )
                 }
             } catch (e: TimeoutCancellationException) {
-                Log.e(TAG, "Timeout generale raggiunto durante l'elaborazione dell'audio", e)
+                Log.e(TAG, "Overall transcription timeout reached", e)
                 _uiState.value = TranscriptionUiState.Error("Operazione scaduta: l'elaborazione ha impiegato più di 3 minuti.")
             } catch (t: Throwable) {
-                Log.e(TAG, "Errore inaspettato durante il processamento", t)
+                Log.e(TAG, "Unexpected error during transcription", t)
                 _uiState.value = TranscriptionUiState.Error(t.localizedMessage ?: "Si è verificato un errore imprevisto.")
             }
         }

@@ -9,10 +9,7 @@ object RiffWaveHelper {
 
     private const val TAG = "RiffWaveHelper"
 
-    /**
-     * Decodes a 16-bit PCM WAV file into a FloatArray of audio samples in [-1.0, 1.0].
-     * Handles arbitrary RIFF chunk ordering (e.g. FFmpeg writing LIST chunk before 'data').
-     */
+    // Decode 16-bit PCM WAV into normalized float samples [-1.0, 1.0]
     fun decodeWaveFile(file: File): FloatArray {
         require(file.exists() && file.length() >= 12) { "File WAV non valido o troppo piccolo: ${file.name}" }
 
@@ -93,7 +90,7 @@ object RiffWaveHelper {
             }
         }
 
-        // Normalizzazione del picco audio per massimizzare l'accuratezza del riconoscimento neurale Whisper
+        // Normalize peak audio
         var maxAbs = 0f
         for (s in floatSamples) {
             val abs = kotlin.math.abs(s)
