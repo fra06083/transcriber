@@ -33,10 +33,10 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
-            enableV1Signing = true
-            enableV2Signing = true
-            enableV3Signing = true
-            enableV4Signing = true
+            enableV1Signing = true  // Android 5/6 compatibility
+            enableV2Signing = true  // Android 7+
+            enableV3Signing = true  // Android 9+
+            enableV4Signing = false // V4 needs .idsig sidecar, breaks sideloaded installs
         }
     }
 
