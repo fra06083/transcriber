@@ -10,6 +10,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.android.transcriber.data.model.ScheduledMessage
 import com.android.transcriber.data.model.ScheduledMessageStatus
+import com.android.transcriber.data.model.TranscriptionRecord
 
 class Converters {
     @TypeConverter
@@ -20,11 +21,12 @@ class Converters {
         runCatching { ScheduledMessageStatus.valueOf(value) }.getOrDefault(ScheduledMessageStatus.PENDING)
 }
 
-@Database(entities = [ScheduledMessage::class], version = 2, exportSchema = false)
+@Database(entities = [ScheduledMessage::class, TranscriptionRecord::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun scheduledMessageDao(): ScheduledMessageDao
+    abstract fun transcriptionRecordDao(): TranscriptionRecordDao
 
     companion object {
         @Volatile
@@ -36,6 +38,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS transcription_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        text TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        sourceApp TEXT NOT NULL,
+                        isWhisper INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -43,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "transcriber_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

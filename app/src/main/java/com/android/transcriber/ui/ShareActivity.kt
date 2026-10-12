@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,7 +47,6 @@ import com.android.transcriber.ui.viewmodel.TranscriptionEngine
 import com.android.transcriber.ui.viewmodel.TranscriptionUiState
 import com.android.transcriber.ui.viewmodel.TranscriptionViewModel
 import kotlinx.coroutines.delay
-import java.util.Locale
 
 class ShareActivity : ComponentActivity() {
 
@@ -111,8 +111,7 @@ class ShareActivity : ComponentActivity() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
-                            .padding(bottom = 36.dp)
-                            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                            .padding(bottom = 36.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
@@ -175,7 +174,7 @@ class ShareActivity : ComponentActivity() {
                                             )
 
                                             Text(
-                                                text = "Transcriber v1.1 • Riconoscimento Vocale",
+                                                text = "Transcriber v1.2 • Riconoscimento Vocale",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.primary
                                             )
@@ -239,7 +238,9 @@ class ShareActivity : ComponentActivity() {
 
                                             Surface(
                                                 onClick = {
-                                                    audioUri?.let { viewModel.processAudioUri(it) }
+                                                    audioUri?.let { uri ->
+                                                        viewModel.processAudioUri(uri, sourceApp = detectSourceApp(uri))
+                                                    }
                                                 },
                                                 shape = RoundedCornerShape(20.dp),
                                                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -424,7 +425,9 @@ class ShareActivity : ComponentActivity() {
                                             Button(
                                                 onClick = {
                                                     stopPlayback()
-                                                    audioUri?.let { viewModel.processAudioUri(it) }
+                                                    audioUri?.let { uri ->
+                                                        viewModel.processAudioUri(uri, sourceApp = detectSourceApp(uri))
+                                                    }
                                                 },
                                                 modifier = Modifier.fillMaxWidth(),
                                                 shape = RoundedCornerShape(14.dp)
@@ -503,17 +506,18 @@ class ShareActivity : ComponentActivity() {
                                                 .fillMaxWidth()
                                                 .heightIn(min = 120.dp, max = 280.dp)
                                         ) {
+                                            val successScrollState = rememberScrollState()
                                             SelectionContainer(
                                                 modifier = Modifier
+                                                    .fillMaxWidth()
                                                     .padding(18.dp)
-                                                    .verticalScroll(rememberScrollState())
+                                                    .verticalScroll(successScrollState)
                                             ) {
-                                                StreamingWordText(
-                                                    fullText = state.text.ifBlank { "Nessun testo rilevato nella nota vocale." },
-                                                    isStreaming = false,
-                                                    speedMs = 28L,
-                                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                                    textColor = MaterialTheme.colorScheme.onSurface
+                                                Text(
+                                                    text = state.text.ifBlank { "Nessun testo rilevato nella nota vocale." },
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    lineHeight = 24.sp
                                                 )
                                             }
                                         }
@@ -667,6 +671,45 @@ class ShareActivity : ComponentActivity() {
         }
     }
 
+    private fun detectSourceApp(audioUri: Uri?): String {
+        // 1. Controlla URI authority
+        val uriAuthority = audioUri?.authority?.lowercase(Locale.ROOT) ?: ""
+        if (uriAuthority.contains("whatsapp")) return "WhatsApp"
+        if (uriAuthority.contains("telegram")) return "Telegram"
+
+        // 2. Controlla URI path
+        val uriPath = audioUri?.path?.lowercase(Locale.ROOT) ?: ""
+        if (uriPath.contains("whatsapp")) return "WhatsApp"
+        if (uriPath.contains("telegram")) return "Telegram"
+
+        // 3. Controlla referrer
+        val ref = referrer
+        val refStr = ref?.toString()?.lowercase(Locale.ROOT) ?: ""
+        if (refStr.contains("whatsapp")) return "WhatsApp"
+        if (refStr.contains("telegram")) return "Telegram"
+
+        // 4. Controlla callingPackage
+        val callingPkg = callingPackage
+        if (!callingPkg.isNullOrBlank()) {
+            if (callingPkg.contains("whatsapp", ignoreCase = true)) return "WhatsApp"
+            if (callingPkg.contains("telegram", ignoreCase = true)) return "Telegram"
+            try {
+                val appInfo = packageManager.getApplicationInfo(callingPkg, 0)
+                return packageManager.getApplicationLabel(appInfo).toString()
+            } catch (_: Exception) {}
+        }
+
+        // 5. Host del referrer tramite PackageManager
+        ref?.host?.let { host ->
+            try {
+                val appInfo = packageManager.getApplicationInfo(host, 0)
+                return packageManager.getApplicationLabel(appInfo).toString()
+            } catch (_: Exception) {}
+        }
+
+        return "WhatsApp"
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopPlayback()
@@ -755,6 +798,15 @@ fun DynamicTranscribingStatus(
         }
     }
 
+    val scrollState = rememberScrollState()
+
+    // Scorrimento automatico verso il basso mentre il testo viene generato man mano
+    LaunchedEffect(partialText) {
+        if (partialText.isNotBlank()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -763,27 +815,20 @@ fun DynamicTranscribingStatus(
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
-        AnimatedContent(
-            targetState = dynamicMessages[messageIndex],
-            transitionSpec = {
-                (fadeIn(animationSpec = tween(400)) + slideInVertically { it / 2 })
-                    .togetherWith(fadeOut(animationSpec = tween(300)) + slideOutVertically { -it / 2 })
-            },
-            label = "dynamic_transcribe_msg"
-        ) { text ->
-            Text(
-                text = text,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = headlineColor,
-                textAlign = TextAlign.Center
-            )
-        }
+        // Aggiorna la frase carina in loco con altezza fissa per non far saltare il widget
+        Text(
+            text = dynamicMessages[messageIndex],
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = headlineColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.height(26.dp)
+        )
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Transcriber v1.1 • Riconoscimento intelligente",
+            text = "Transcriber v1.2 • Riconoscimento intelligente",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -798,24 +843,25 @@ fun DynamicTranscribingStatus(
             height = 5.dp
         )
 
+        // Box fisso: il widget rimane perfettamente stabile
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 80.dp, max = 220.dp)
+                .height(190.dp) // Altezza stabile e fissa
         ) {
             Box(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
             ) {
                 if (partialText.isNotBlank() && !partialText.contains("%")) {
-                    // Generazione progressiva in tempo reale delle parole ricevute
                     StreamingWordText(
                         fullText = partialText,
                         isStreaming = true,
-                        speedMs = 24L,
+                        speedMs = 18L,
                         textStyle = MaterialTheme.typography.bodyMedium,
                         textColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -825,20 +871,12 @@ fun DynamicTranscribingStatus(
                     } else {
                         subMessages[messageIndex]
                     }
-                    AnimatedContent(
-                        targetState = currentDetail,
-                        transitionSpec = {
-                            fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(250))
-                        },
-                        label = "detail_msg"
-                    ) { detailText ->
-                        Text(
-                            text = "$detailText ▍",
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 22.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = "$currentDetail ▍",
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    )
                 }
             }
         }

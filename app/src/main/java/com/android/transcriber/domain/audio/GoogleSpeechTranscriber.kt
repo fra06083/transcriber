@@ -26,6 +26,118 @@ import java.util.Locale
 
 private const val TAG = "GoogleSpeechTranscriber"
 
+/**
+ * Gestore dell'accumulo progressivo dei segmenti di testo per Google Speech.
+ * Previene la perdita del testo iniziale nei vocali lunghi quando il motore
+ * azzera il buffer parziale o emette risultati segmentati.
+ */
+class TranscriptAccumulator {
+    private val committedSegments = mutableListOf<String>()
+    private var currentSegment = ""
+
+    @Synchronized
+    fun onSegment(segmentText: String): String {
+        val trimmed = segmentText.trim()
+        if (trimmed.isNotBlank()) {
+            committedSegments.add(trimmed)
+            currentSegment = ""
+        }
+        return getFullText()
+    }
+
+    @Synchronized
+    fun onPartial(partialText: String): String {
+        val trimmed = partialText.trim()
+        if (trimmed.isBlank()) return getFullText()
+
+        if (currentSegment.isBlank()) {
+            currentSegment = trimmed
+            return getFullText()
+        }
+
+        val currentWords = currentSegment.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        val newWords = trimmed.split("\\s+".toRegex()).filter { it.isNotBlank() }
+
+        // 1. Controlla se la nuova frase è un'estensione o un raffinamento della frase corrente
+        var commonPrefix = 0
+        while (commonPrefix < currentWords.size && commonPrefix < newWords.size &&
+            currentWords[commonPrefix].equals(newWords[commonPrefix], ignoreCase = true)
+        ) {
+            commonPrefix++
+        }
+
+        val isContinuation = commonPrefix >= 2 ||
+                (currentWords.size <= 2 && commonPrefix >= 1) ||
+                (commonPrefix > 0 && commonPrefix >= currentWords.size / 2)
+
+        if (isContinuation) {
+            currentSegment = trimmed
+        } else {
+            // 2. Controlla sovrapposizione tra la fine di currentSegment e l'inizio di newWords
+            var maxOverlap = 0
+            val maxCheck = minOf(currentWords.size, newWords.size)
+            for (overlap in maxCheck downTo 1) {
+                val tail = currentWords.takeLast(overlap)
+                val head = newWords.take(overlap)
+                if (tail.zip(head).all { (a, b) -> a.equals(b, ignoreCase = true) }) {
+                    maxOverlap = overlap
+                    break
+                }
+            }
+
+            if (maxOverlap > 0) {
+                val commitPart = currentWords.dropLast(maxOverlap).joinToString(" ")
+                if (commitPart.isNotBlank()) {
+                    committedSegments.add(commitPart)
+                }
+                currentSegment = trimmed
+            } else {
+                // Nuovo segmento distinto: salva integralmente il testo precedente
+                committedSegments.add(currentSegment)
+                currentSegment = trimmed
+            }
+        }
+
+        return getFullText()
+    }
+
+    @Synchronized
+    fun onFinalResults(bestText: String?): String {
+        val trimmed = bestText?.trim() ?: ""
+        if (trimmed.isNotBlank()) {
+            val currentFull = getFullText()
+            if (trimmed.startsWith(currentFull, ignoreCase = true) || trimmed.length > currentFull.length + 5) {
+                // Il motore ha restituito l'intera trascrizione consolidata
+                committedSegments.clear()
+                committedSegments.add(trimmed)
+                currentSegment = ""
+                return trimmed
+            }
+            onPartial(trimmed)
+            if (currentSegment.isNotBlank()) {
+                committedSegments.add(currentSegment)
+                currentSegment = ""
+            }
+        } else if (currentSegment.isNotBlank()) {
+            committedSegments.add(currentSegment)
+            currentSegment = ""
+        }
+        return getFullText()
+    }
+
+    @Synchronized
+    fun getFullText(): String {
+        val parts = mutableListOf<String>()
+        for (seg in committedSegments) {
+            if (seg.isNotBlank()) parts.add(seg)
+        }
+        if (currentSegment.isNotBlank()) {
+            parts.add(currentSegment)
+        }
+        return parts.joinToString(" ").trim()
+    }
+}
+
 class GoogleSpeechTranscriber(private val context: Context) {
 
     /**
@@ -60,6 +172,10 @@ class GoogleSpeechTranscriber(private val context: Context) {
                 )
             }
 
+            // Calcola durata dell'audio in secondi
+            val audioDurationSec = ((wavFile.length() - 44) / 32000L).coerceAtLeast(1L)
+            val audioDurationMs = audioDurationSec * 1000L
+
             // Crea il riconoscitore preferendo l'on-device se supportato
             val recognizer: SpeechRecognizer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
@@ -76,8 +192,9 @@ class GoogleSpeechTranscriber(private val context: Context) {
             val writeSide = pipe[1]
 
             val deferredResult = CompletableDeferred<String>()
-            var partialAccumulated = ""
+            val accumulator = TranscriptAccumulator()
             var streamingJob: Job? = null
+            var isStreamingFinished = false
 
             val targetLocale = when (languageCode.lowercase().trim()) {
                 "it" -> Locale.ITALIAN
@@ -91,6 +208,14 @@ class GoogleSpeechTranscriber(private val context: Context) {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, targetLocale.toLanguageTag())
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+
+                // Impedisce al riconoscitore di terminare anticipatamente durante pause o silenzio
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, audioDurationMs)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 12000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 12000L)
+
+                // Extra per sessione segmentata su Android 13+ (API 33+)
+                putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS)
 
                 // Extra per streaming audio da pipe (Android 13+ / API 33+)
                 putExtra("android.speech.extra.AUDIO_SOURCE", readSide)
@@ -131,28 +256,56 @@ class GoogleSpeechTranscriber(private val context: Context) {
                     }
                     Log.w(TAG, "Google Speech onError: $errorMessage ($error)")
 
-                    // Se avevamo già accumulato testo parziale, usiamo quello invece di fallire
-                    if (partialAccumulated.isNotBlank()) {
-                        deferredResult.complete(partialAccumulated)
-                    } else {
-                        deferredResult.completeExceptionally(Exception(errorMessage))
+                    val currentFull = accumulator.getFullText()
+                    if (currentFull.isNotBlank()) {
+                        Log.i(TAG, "Google Speech onError ma testo accumulato presente: '$currentFull'")
+                        if (!deferredResult.isCompleted) {
+                            deferredResult.complete(currentFull)
+                        }
+                    } else if (isStreamingFinished || error != SpeechRecognizer.ERROR_NO_MATCH) {
+                        if (!deferredResult.isCompleted) {
+                            deferredResult.completeExceptionally(Exception(errorMessage))
+                        }
                     }
                 }
 
                 override fun onResults(results: Bundle?) {
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val bestText = matches?.firstOrNull()?.trim() ?: partialAccumulated
-                    Log.i(TAG, "Google Speech completato con testo: '$bestText'")
-                    deferredResult.complete(bestText)
+                    val bestText = matches?.firstOrNull()?.trim()
+                    val full = accumulator.onFinalResults(bestText)
+                    Log.i(TAG, "Google Speech onResults testo totale: '$full'")
+                    onProgress(full)
+
+                    if (isStreamingFinished && !deferredResult.isCompleted) {
+                        deferredResult.complete(full)
+                    }
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {
                     val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull()?.trim()
                     if (!text.isNullOrEmpty()) {
-                        partialAccumulated = text
-                        Log.d(TAG, "Google Speech testo parziale: $text")
-                        onProgress(text)
+                        val full = accumulator.onPartial(text)
+                        Log.d(TAG, "Google Speech parziale progressivo: $full")
+                        onProgress(full)
+                    }
+                }
+
+                override fun onSegmentResults(segmentResults: Bundle) {
+                    val matches = segmentResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val text = matches?.firstOrNull()?.trim()
+                    if (!text.isNullOrEmpty()) {
+                        val full = accumulator.onSegment(text)
+                        Log.i(TAG, "Google Speech segmento completato: $text -> totale: $full")
+                        onProgress(full)
+                    }
+                }
+
+                override fun onEndOfSegmentedSession() {
+                    val full = accumulator.getFullText()
+                    Log.i(TAG, "Google Speech fine sessione segmentata: '$full'")
+                    if (!deferredResult.isCompleted) {
+                        deferredResult.complete(full)
                     }
                 }
 
@@ -185,28 +338,26 @@ class GoogleSpeechTranscriber(private val context: Context) {
                     } catch (e: Throwable) {
                         Log.w(TAG, "Nota streaming pipe: ${e.localizedMessage}")
                     } finally {
+                        isStreamingFinished = true
                         runCatching { writeSide.close() }
                     }
                 }
 
-                // Attende il risultato con un timeout proporzionato alla durata dell'audio
-                val audioDurationSec = (wavFile.length() - 44) / 32000L
-                val maxTimeoutMs = ((audioDurationSec + 10) * 1000L).coerceAtLeast(30_000L)
+                // Attende che lo streaming audio completi
+                streamingJob.join()
 
+                // Attende la conclusione del riconoscimento
+                val maxTimeoutMs = 8_000L
                 val finalResult = withTimeoutOrNull(maxTimeoutMs) {
                     deferredResult.await()
-                } ?: run {
-                    if (partialAccumulated.isNotBlank()) {
-                        partialAccumulated
-                    } else {
-                        throw Exception("Timeout: Google Speech non ha restituito risultati entro $audioDurationSec secondi.")
-                    }
-                }
+                } ?: accumulator.getFullText()
 
-                if (finalResult.isBlank()) {
+                val textOutput = finalResult.ifBlank { accumulator.getFullText() }
+
+                if (textOutput.isBlank()) {
                     "Trascrizione completata: Nessun testo rilevato nel file audio."
                 } else {
-                    finalResult
+                    textOutput
                 }
             } finally {
                 streamingJob?.cancel()

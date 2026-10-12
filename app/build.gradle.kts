@@ -12,8 +12,8 @@ android {
         applicationId = "com.android.transcriber"
         minSdk = 24
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.1"
+        versionCode = 7
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

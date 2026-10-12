@@ -13,7 +13,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -140,18 +143,19 @@ fun GoogleAssistantDots(
 
 /**
  * Genera e visualizza le parole progressivamente (effetto Typewriter / Streaming)
- * come in Gemini e Google Assistant, evitando la comparsa improvvisa di tutto il blocco di testo.
+ * come in Gemini e Google Assistant, mantenendo il layout stabile senza sfarfallio
+ * o effetti di pop-in/pop-out delle parole.
  *
  * @param fullText Il testo completo o parziale da mostrare progressivamente.
  * @param isStreaming Indica se la trascrizione è ancora in corso.
- * @param speedMs Ritardo tra la comparsa di una parola e la successiva (default: 32ms).
+ * @param speedMs Ritardo tra la comparsa di una parola e la successiva (default: 20ms).
  */
 @Composable
 fun StreamingWordText(
     fullText: String,
     isStreaming: Boolean,
     modifier: Modifier = Modifier,
-    speedMs: Long = 32L,
+    speedMs: Long = 20L,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     textColor: Color = MaterialTheme.colorScheme.onSurface,
     cursorColor: Color = GoogleBlue
@@ -162,13 +166,15 @@ fun StreamingWordText(
 
     var displayedCount by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(fullText) {
+    LaunchedEffect(words.size) {
         val totalWords = words.size
-        // Se il testo si azzera o cambia radicalmente
-        if (totalWords < displayedCount) {
+        if (totalWords == 0) {
+            displayedCount = 0
+            return@LaunchedEffect
+        }
+        if (displayedCount > totalWords) {
             displayedCount = totalWords
         }
-        // Fa apparire le parole gradualmente una alla volta
         while (displayedCount < totalWords) {
             displayedCount++
             delay(speedMs)
@@ -188,36 +194,31 @@ fun StreamingWordText(
     )
 
     val currentText = remember(displayedCount, words) {
-        words.take(displayedCount).joinToString(" ")
+        if (displayedCount <= 0 || words.isEmpty()) ""
+        else words.take(displayedCount).joinToString(" ")
     }
 
     val showCursor = isStreaming || (displayedCount < words.size)
 
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.Bottom
-    ) {
-        Text(
-            text = buildString {
-                append(currentText)
-                if (showCursor && currentText.isNotEmpty()) {
+    val annotatedText = remember(currentText, showCursor, cursorAlpha) {
+        buildAnnotatedString {
+            append(currentText)
+            if (showCursor) {
+                if (currentText.isNotEmpty()) {
                     append(" ")
                 }
-            },
-            style = textStyle,
-            color = textColor,
-            lineHeight = (textStyle.fontSize.value * 1.45f).sp
-        )
-
-        if (showCursor) {
-            Box(
-                modifier = Modifier
-                    .padding(bottom = 3.dp, start = 2.dp)
-                    .width(7.dp)
-                    .height((textStyle.fontSize.value * 1.1f).dp)
-                    .clip(CircleShape)
-                    .background(cursorColor.copy(alpha = cursorAlpha))
-            )
+                withStyle(SpanStyle(color = cursorColor.copy(alpha = cursorAlpha))) {
+                    append("▍")
+                }
+            }
         }
     }
+
+    Text(
+        text = annotatedText,
+        style = textStyle,
+        color = textColor,
+        lineHeight = (textStyle.fontSize.value * 1.45f).sp,
+        modifier = modifier
+    )
 }
