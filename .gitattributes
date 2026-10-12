@@ -1,0 +1,3 @@
+# Mark binary files to prevent git line-ending conversion
+*.keystore binary
+*.jks binary
